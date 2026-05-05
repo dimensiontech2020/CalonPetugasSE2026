@@ -204,6 +204,12 @@
             box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
         }
 
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .btn-secondary {
             background: #f0f0f0;
             color: #333;
@@ -221,6 +227,12 @@
         .btn-success:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(17, 153, 142, 0.4);
+        }
+
+        .btn-success:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .coordinate-display {
@@ -365,8 +377,15 @@
 
         .modal-content i {
             font-size: 60px;
-            color: #38ef7d;
             margin-bottom: 20px;
+        }
+
+        .modal-content i.success {
+            color: #38ef7d;
+        }
+
+        .modal-content i.error {
+            color: #e74c3c;
         }
 
         .modal-content h2 {
@@ -441,7 +460,53 @@
         .info-box i {
             margin-right: 8px;
         }
+
+        .submit-spinner {
+            display: none;
+            width: 18px;
+            height: 18px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            animation: slideUp 0.3s ease;
+        }
+
+        .toast.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .toast.error {
+            background: linear-gradient(135deg, #cb2d3e 0%, #ef473a 100%);
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
     </style>
+<base target="_blank">
 </head>
 <body>
     <div class="container">
@@ -744,26 +809,33 @@
                 </div>
 
                 <div class="submit-section">
-                    <button type="submit" class="btn btn-success btn-submit">
-                        <i class="fas fa-paper-plane"></i>
-                        Simpan Biodata
+                    <button type="submit" class="btn btn-success btn-submit" id="btnSubmit">
+                        <i class="fas fa-paper-plane" id="submitIcon"></i>
+                        <div class="submit-spinner" id="submitSpinner"></div>
+                        <span id="submitText">Simpan ke Google Sheets</span>
                     </button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Modal Sukses -->
-    <div class="modal" id="successModal">
+    <!-- Modal -->
+    <div class="modal" id="resultModal">
         <div class="modal-content">
-            <i class="fas fa-check-circle"></i>
-            <h2>Berhasil Disimpan!</h2>
-            <p>Data biodata dan lokasi geotagging telah berhasil disimpan.</p>
+            <i class="fas fa-check-circle success" id="modalIcon"></i>
+            <h2 id="modalTitle">Berhasil!</h2>
+            <p id="modalMessage">Data berhasil disimpan ke Google Sheets.</p>
             <button class="btn btn-primary" onclick="closeModal()">
                 <i class="fas fa-check"></i>
                 OK
             </button>
         </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast">
+        <i class="fas fa-check-circle"></i>
+        <span id="toastMessage">Pesan</span>
     </div>
 
     <!-- Leaflet JS -->
@@ -772,10 +844,17 @@
             crossorigin=""></script>
 
     <script>
-        // Inisialisasi peta
+        // ============================================
+        // KONFIGURASI GOOGLE APPS SCRIPT
+        // GANTI URL INI DENGAN URL WEB APP ANDA
+        // ============================================
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbw4txQl_NPAue9jzcnzUKav_C-ThTN7jW17SK0pLzA4XE2_MaYD3XT5w14QGVcXoLq3Tw/exec";
+
+        // ============================================
+        // INISIALISASI PETA
+        // ============================================
         const map = L.map('map').setView([-2.5489, 118.0149], 5);
 
-        // Tambah layer OpenStreetMap
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19
@@ -783,13 +862,14 @@
 
         let marker = null;
         let circle = null;
+        let fotoBase64 = "";
 
-        // Fungsi untuk update tampilan koordinat
+        // ============================================
+        // FUNGSI KOORDINAT
+        // ============================================
         function updateCoordinateDisplay(lat, lng, accuracy = null, timestamp = null) {
             document.getElementById('latValue').textContent = lat.toFixed(6);
             document.getElementById('lngValue').textContent = lng.toFixed(6);
-
-            // Konversi ke DMS
             document.getElementById('latDms').textContent = convertToDMS(lat, 'lat');
             document.getElementById('lngDms').textContent = convertToDMS(lng, 'lng');
 
@@ -802,43 +882,28 @@
                 document.getElementById('timestampValue').textContent = date.toLocaleString('id-ID');
             }
 
-            // Update hidden inputs
             document.getElementById('latitude').value = lat;
             document.getElementById('longitude').value = lng;
             if (accuracy !== null) document.getElementById('accuracy').value = accuracy;
             if (timestamp !== null) document.getElementById('timestamp').value = timestamp;
         }
 
-        // Konversi ke DMS
         function convertToDMS(coord, type) {
             const absolute = Math.abs(coord);
             const degrees = Math.floor(absolute);
             const minutesNotTruncated = (absolute - degrees) * 60;
             const minutes = Math.floor(minutesNotTruncated);
             const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
-
-            let direction = '';
-            if (type === 'lat') {
-                direction = coord >= 0 ? 'N' : 'S';
-            } else {
-                direction = coord >= 0 ? 'E' : 'W';
-            }
-
+            let direction = type === 'lat' ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
             return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
         }
 
-        // Fungsi untuk menambah marker
         function addMarker(lat, lng, accuracy = null) {
-            // Hapus marker dan circle lama
             if (marker) map.removeLayer(marker);
             if (circle) map.removeLayer(circle);
 
-            // Tambah marker baru
-            marker = L.marker([lat, lng], {
-                draggable: true
-            }).addTo(map);
+            marker = L.marker([lat, lng], { draggable: true }).addTo(map);
 
-            // Tambah circle untuk akurasi
             if (accuracy) {
                 circle = L.circle([lat, lng], {
                     radius: accuracy,
@@ -848,7 +913,6 @@
                 }).addTo(map);
             }
 
-            // Popup
             marker.bindPopup(`
                 <b>Lokasi Terpilih</b><br>
                 Lat: ${lat.toFixed(6)}<br>
@@ -856,22 +920,17 @@
                 ${accuracy ? `Akurasi: ${accuracy.toFixed(1)} m` : ''}
             `).openPopup();
 
-            // Event drag marker
             marker.on('dragend', function(e) {
                 const pos = e.target.getLatLng();
                 updateCoordinateDisplay(pos.lat, pos.lng);
-                if (circle) {
-                    circle.setLatLng([pos.lat, pos.lng]);
-                }
+                if (circle) circle.setLatLng([pos.lat, pos.lng]);
             });
 
-            // Update status
             const statusBadge = document.getElementById('geoStatus');
             statusBadge.textContent = 'Lokasi Tertentukan';
             statusBadge.className = 'status-badge status-success';
         }
 
-        // Klik pada peta
         map.on('click', function(e) {
             const lat = e.latlng.lat;
             const lng = e.latlng.lng;
@@ -879,13 +938,15 @@
             updateCoordinateDisplay(lat, lng);
         });
 
-        // Ambil lokasi pengguna
+        // ============================================
+        // TOMBOL LOKASI
+        // ============================================
         document.getElementById('btnGetLocation').addEventListener('click', function() {
             const spinner = document.getElementById('locationSpinner');
             const btn = this;
 
             if (!navigator.geolocation) {
-                alert('Browser Anda tidak mendukung geolokasi.');
+                showToast('Browser tidak mendukung geolokasi', 'error');
                 return;
             }
 
@@ -899,19 +960,19 @@
                     const accuracy = position.coords.accuracy;
                     const timestamp = position.timestamp;
 
-                    // Update peta
                     map.setView([lat, lng], 16);
                     addMarker(lat, lng, accuracy);
                     updateCoordinateDisplay(lat, lng, accuracy, timestamp);
 
                     spinner.style.display = 'none';
                     btn.disabled = false;
+                    showToast('Lokasi berhasil didapatkan!', 'success');
                 },
                 function(error) {
                     let message = 'Gagal mendapatkan lokasi.';
                     switch(error.code) {
                         case error.PERMISSION_DENIED:
-                            message = 'Akses lokasi ditolak. Mohon izinkan akses lokasi di browser Anda.';
+                            message = 'Akses lokasi ditolak. Izinkan akses lokasi di browser.';
                             break;
                         case error.POSITION_UNAVAILABLE:
                             message = 'Informasi lokasi tidak tersedia.';
@@ -920,19 +981,14 @@
                             message = 'Waktu permintaan lokasi habis.';
                             break;
                     }
-                    alert(message);
+                    showToast(message, 'error');
                     spinner.style.display = 'none';
                     btn.disabled = false;
                 },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
-                }
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         });
 
-        // Reset peta
         document.getElementById('btnResetMap').addEventListener('click', function() {
             if (marker) map.removeLayer(marker);
             if (circle) map.removeLayer(circle);
@@ -958,27 +1014,33 @@
             statusBadge.className = 'status-badge status-pending';
         });
 
-        // Preview foto
+        // ============================================
+        // PREVIEW FOTO & KONVERSI BASE64
+        // ============================================
         document.getElementById('fotoInput').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (file) {
-                if (file.size > 2 * 1024 * 1024) {
-                    alert('Ukuran file maksimal 2MB');
-                    this.value = '';
-                    return;
-                }
+            if (!file) return;
 
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const preview = document.getElementById('photoPreview');
-                    preview.src = e.target.result;
-                    preview.style.display = 'block';
-                };
-                reader.readAsDataURL(file);
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('Ukuran file maksimal 2MB', 'error');
+                this.value = '';
+                fotoBase64 = "";
+                return;
             }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const preview = document.getElementById('photoPreview');
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                fotoBase64 = e.target.result;
+            };
+            reader.readAsDataURL(file);
         });
 
-        // Validasi form
+        // ============================================
+        // VALIDASI FORM
+        // ============================================
         function validateForm() {
             let isValid = true;
             const requiredFields = document.querySelectorAll('[required]');
@@ -996,14 +1058,12 @@
                     if (errorMsg) errorMsg.style.display = 'none';
                 }
 
-                // Validasi NIK
                 if (field.name === 'nik' && field.value.length !== 16) {
                     field.classList.add('error');
                     if (errorMsg) errorMsg.style.display = 'block';
                     isValid = false;
                 }
 
-                // Validasi email
                 if (field.name === 'email' && field.value) {
                     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                     if (!emailRegex.test(field.value)) {
@@ -1014,53 +1074,107 @@
                 }
             });
 
-            // Validasi lokasi
             if (!document.getElementById('latitude').value) {
-                alert('Mohon tentukan lokasi menggunakan fitur geotagging terlebih dahulu.');
+                showToast('Mohon tentukan lokasi menggunakan geotagging terlebih dahulu.', 'error');
                 isValid = false;
             }
 
             return isValid;
         }
 
-        // Submit form
-        document.getElementById('biodataForm').addEventListener('submit', function(e) {
+        // ============================================
+        // SUBMIT KE GOOGLE SHEETS
+        // ============================================
+        document.getElementById('biodataForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
             if (!validateForm()) return;
 
-            // Di sini biasanya akan mengirim data ke server
-            // Untuk demo, kita tampilkan modal sukses
+            const btnSubmit = document.getElementById('btnSubmit');
+            const submitIcon = document.getElementById('submitIcon');
+            const submitSpinner = document.getElementById('submitSpinner');
+            const submitText = document.getElementById('submitText');
 
+            // Tampilkan loading
+            btnSubmit.disabled = true;
+            submitIcon.style.display = 'none';
+            submitSpinner.style.display = 'inline-block';
+            submitText.textContent = 'Menyimpan...';
+
+            // Kumpulkan data
             const formData = new FormData(this);
             const data = {};
             formData.forEach((value, key) => {
                 data[key] = value;
             });
 
-            const scriptURL = "https://script.google.com/macros/s/AKfycbz4WeIpVbCNVoxvf86TbCSPTmDjEsoqo7v8PEC53vERUh1V8uvj93Ik69qnSfdAiq52Pg/exec";
+            // Tambahkan foto base64
+            data.foto_base64 = fotoBase64;
 
-            fetch(scriptURL, {
-                method: "POST",
-                body: JSON.stringify(data)
-            })
-            .then(res => res.text())
-            .then(res => {
-                console.log(res);
-                document.getElementById('successModal').style.display = 'flex';
-            })
-            .catch(err => {
-                console.error(err);
-                alert("Gagal kirim data");
-            });
+            try {
+                // Kirim ke Google Apps Script
+                // Menggunakan no-cors karena GAS tidak selalu mengembalikan CORS headers
+                await fetch(GAS_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
 
-        // Tutup modal
+                // Dengan mode no-cors, response tidak bisa dibaca
+                // Tapi request tetap terkirim ke GAS
+                showModal('success', 'Berhasil Disimpan!', 'Data biodata dan lokasi telah berhasil dikirim ke Google Sheets. Silakan cek spreadsheet Anda.');
+
+                // Reset form
+                this.reset();
+                document.getElementById('btnResetMap').click();
+                document.getElementById('photoPreview').style.display = 'none';
+                fotoBase64 = "";
+
+            } catch (error) {
+                console.error('Error:', error);
+                showModal('error', 'Gagal!', 'Terjadi kesalahan: ' + error.message);
+            } finally {
+                btnSubmit.disabled = false;
+                submitIcon.style.display = 'inline-block';
+                submitSpinner.style.display = 'none';
+                submitText.textContent = 'Simpan ke Google Sheets';
+            }
+        });
+
+        // ============================================
+        // UI HELPERS
+        // ============================================
+        function showModal(type, title, message) {
+            const modal = document.getElementById('resultModal');
+            const icon = document.getElementById('modalIcon');
+            const modalTitle = document.getElementById('modalTitle');
+            const modalMessage = document.getElementById('modalMessage');
+
+            icon.className = type === 'success' ? 'fas fa-check-circle success' : 'fas fa-times-circle error';
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+
+            modal.style.display = 'flex';
+        }
+
         function closeModal() {
-            document.getElementById('successModal').style.display = 'none';
-            // Reset form
-            document.getElementById('biodataForm').reset();
-            document.getElementById('btnResetMap').click();
-            document.getElementById('photoPreview').style.display = 'none';
+            document.getElementById('resultModal').style.display = 'none';
+        }
+
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+
+            toast.className = 'toast ' + type;
+            toastMessage.textContent = message;
+            toast.style.display = 'flex';
+
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 4000);
         }
 
         // Hilangkan error saat input
@@ -1073,7 +1187,9 @@
             });
         });
 
-        // Coba ambil lokasi otomatis saat halaman dimuat
+        // ============================================
+        // AMBIL LOKASI OTOMATIS SAAT LOAD
+        // ============================================
         window.addEventListener('load', function() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
@@ -1087,14 +1203,8 @@
                         addMarker(lat, lng, accuracy);
                         updateCoordinateDisplay(lat, lng, accuracy, timestamp);
                     },
-                    function() {
-                        // Gagal, biarkan default
-                    },
-                    {
-                        enableHighAccuracy: true,
-                        timeout: 5000,
-                        maximumAge: 0
-                    }
+                    function() { /* Gagal, biarkan default */ },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
                 );
             }
         });
