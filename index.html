@@ -1038,11 +1038,21 @@
                 data[key] = value;
             });
 
-            console.log('Data yang akan dikirim:', data);
+            const scriptURL = "https://script.google.com/macros/s/AKfycbz4WeIpVbCNVoxvf86TbCSPTmDjEsoqo7v8PEC53vERUh1V8uvj93Ik69qnSfdAiq52Pg/exec";
 
-            // Tampilkan modal sukses
-            document.getElementById('successModal').style.display = 'flex';
-        });
+            fetch(scriptURL, {
+                method: "POST",
+                body: JSON.stringify(data)
+            })
+            .then(res => res.text())
+            .then(res => {
+                console.log(res);
+                document.getElementById('successModal').style.display = 'flex';
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Gagal kirim data");
+            });
 
         // Tutup modal
         function closeModal() {
