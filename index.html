@@ -1038,7 +1038,18 @@
                 data[key] = value;
             });
 
-            console.log('Data yang akan dikirim:', data);
+            fetch("URL_WEB_APP_KAMU", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    ...data,
+                foto_base64: document.getElementById('photoPreview').src || ""
+                  })
+                })
+.then(res => res.text())
+.then(() => {
+  document.getElementById('successModal').style.display = 'flex';
+})
+.catch(err => alert("Gagal kirim data"));
 
             // Tampilkan modal sukses
             document.getElementById('successModal').style.display = 'flex';
